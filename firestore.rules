@@ -1,0 +1,94 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isUserAuthenticated() {
+      return request.auth != null;
+    }
+
+    match /users/{userId} {
+      allow read, write: if isUserAuthenticated() && request.auth.uid == userId;
+    }
+
+    match /transactions/{transactionId} {
+      // A user can read a transaction if they own it OR if it's shared with a household they are a member of.
+      allow read: if isUserAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        (resource.data.sharing != 'personal' && get(/databases/$(database)/documents/households/$(resource.data.sharing)).data.memberIds[request.auth.uid] == true)
+      );
+
+      // A user can list transactions they own.
+      allow list: if isUserAuthenticated() && request.resource.data.userId == request.auth.uid;
+
+      // A user can list transactions for a single household they are a member of.
+      allow list: if isUserAuthenticated() && request.resource.data.sharing == request.query.where.sharing &&
+                    get(/databases/$(database)/documents/households/$(request.resource.data.sharing)).data.memberIds[request.auth.uid] == true;
+
+      // A user can write a transaction if they own it.
+      allow write: if isUserAuthenticated() && request.auth.uid == request.resource.data.userId;
+    }
+    
+    match /savings/{savingId} {
+      allow create: if isUserAuthenticated() && request.resource.data.userId == request.auth.uid;
+      
+      allow read: if isUserAuthenticated() && (
+        resource.data.userId == request.auth.uid || 
+        (resource.data.sharing != 'personal' && get(/databases/$(database)/documents/households/$(resource.data.sharing)).data.memberIds[request.auth.uid] == true)
+      );
+      
+      // Allow owner to update everything. Allow household members to update only contributions.
+      allow update: if isUserAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        (
+          resource.data.sharing != 'personal' && 
+          get(/databases/$(database)/documents/households/$(resource.data.sharing)).data.memberIds[request.auth.uid] == true &&
+          request.resource.data.keys().hasOnly(['contributions'])
+        )
+      );
+      
+      allow delete: if isUserAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+    
+    match /assets/{assetId} {
+        allow read, write: if isUserAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    match /liabilities/{liabilityId} {
+        allow read, write: if isUserAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+    
+    match /expenseCategories/{categoryId} {
+        allow read, write: if isUserAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+    
+    match /incomeCategories/{categoryId} {
+        allow read, write: if isUserAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+    
+    match /assetTypes/{typeId} {
+        allow read, write: if isUserAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+    
+    match /invitations/{invitationId} {
+      allow create: if isUserAuthenticated();
+      allow read, delete: if isUserAuthenticated() && request.auth.uid == resource.data.invitedBy || request.auth.token.email == resource.data.invitedEmail;
+    }
+
+    match /households/{householdId} {
+      function isMember() {
+        return request.auth.uid in resource.data.memberIds;
+      }
+      
+      function isOwner() {
+        return request.auth.uid == resource.data.ownerId;
+      }
+
+      allow read: if isUserAuthenticated() && isMember();
+      allow create: if isUserAuthenticated() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isUserAuthenticated() && isMember();
+      allow delete: if isUserAuthenticated() && isOwner();
+    }
+  }
+}

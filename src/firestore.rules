@@ -1,0 +1,81 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if a user is a member of a household
+    function isHouseholdMember(householdId, userId) {
+      return get(/databases/$(database)/documents/households/$(householdId)).data.memberIds.hasAny([userId]);
+    }
+    
+    // Users can only read their own document
+    match /users/{userId} {
+      allow read, write: if request.auth.uid == userId;
+    }
+
+    // Default categories are publicly readable
+    match /{collectionName}/{categoryId} {
+        function isDefaultCategory() {
+            return collectionName == 'expenseCategories' || collectionName == 'incomeCategories' || collectionName == 'assetTypes';
+        }
+        allow read: if isDefaultCategory() && resource.data.isDefault == true;
+        allow read, write, delete: if isDefaultCategory() && request.auth.uid == resource.data.userId;
+    }
+
+    // Assets, liabilities, and personal savings goals can be managed by their owner
+    match /{collection}/{docId} {
+        function isUserOwned() {
+            return collection == 'assets' || collection == 'liabilities' || collection == 'savings' || collection == 'investments' || collection == 'transactions';
+        }
+        allow read, write, delete: if isUserOwned() && request.auth.uid == resource.data.userId;
+    }
+
+    // Households
+    match /households/{householdId} {
+        allow read, update: if isHouseholdMember(householdId, request.auth.uid);
+        allow create: if request.resource.data.ownerId == request.auth.uid;
+        allow delete: if resource.data.ownerId == request.auth.uid;
+    }
+    
+    // Shared savings goals
+    match /savings/{goalId} {
+        // Anyone in the household can read a shared goal
+        allow read: if resource.data.sharing != 'personal' && isHouseholdMember(resource.data.sharing, request.auth.uid);
+        // Any member can add/remove contributions to a shared goal
+        allow update: if resource.data.sharing != 'personal' 
+                      && isHouseholdMember(resource.data.sharing, request.auth.uid)
+                      // Ensure they only add/remove their own contributions
+                      && request.resource.data.contributions.size() == resource.data.contributions.size() + 1
+                      && request.resource.data.contributions.size() > 0
+                      && request.resource.data.contributions[-1].userId == request.auth.uid;
+        
+        allow update: if resource.data.sharing != 'personal'
+                      && isHouseholdMember(resource.data.sharing, request.auth.uid)
+                      && request.resource.data.contributions.size() == resource.data.contributions.size() -1;
+    }
+    
+    // Shared transactions
+    match /transactions/{transactionId} {
+       // A member can read any transaction shared with a household they are in.
+       allow read: if resource.data.sharing != 'personal' && isHouseholdMember(resource.data.sharing, request.auth.uid);
+       // Only owner can update/delete
+       allow update, delete: if resource.data.userId == request.auth.uid;
+       // Allow any authenticated user to create transactions for themselves
+       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+       
+       // Allow listing user's own transactions or transactions for a single household they are a member of.
+       allow list: if request.query.limit <= 100 && (
+                      (request.query.where.size() == 1 && request.query.where[0][0] == 'userId' && request.query.where[0][2] == request.auth.uid) ||
+                      (request.query.where.size() == 1 && request.query.where[0][0] == 'sharing' && isHouseholdMember(request.query.where[0][2], request.auth.uid))
+                    );
+    }
+    
+    // Invitations
+    match /invitations/{invitationId} {
+      allow read: if request.auth.uid == resource.data.invitedBy || request.auth.uid != null && request.auth.token.email == resource.data.invitedEmail;
+      allow create: if request.auth.uid == request.resource.data.invitedBy;
+      allow delete: if request.auth.uid == resource.data.invitedBy || request.auth.uid != null && request.auth.token.email == resource.data.invitedEmail;
+    }
+  }
+}
