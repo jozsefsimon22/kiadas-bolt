@@ -3,15 +3,13 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth, initializeAuth, browserLocalPersistence } from "firebase/auth";
 
-const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: projectId,
-  storageBucket: `${projectId}.appspot.com`,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  apiKey: "AIzaSyCLo5suQWhrf3nLjQjKoJdAfbpYbu8iLM8",
+  authDomain: "worthwatch-1x4bs.firebaseapp.com",
+  projectId: "worthwatch-1x4bs",
+  storageBucket: "worthwatch-1x4bs.firebasestorage.app",
+  messagingSenderId: "632206557468",
+  appId: "1:632206557468:web:7754c3bc47744220003ad9"
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
